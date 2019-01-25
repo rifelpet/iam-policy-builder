@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/rifelpet/aws-policy-builder/cmd"
+	"github.com/rifelpet/iam-policy-builder/cmd"
 )
 
 func main() {

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/rifelpet/aws-policy-builder/pkg/parser"
+	"github.com/rifelpet/iam-policy-builder/pkg/parser"
 
 	"github.com/spf13/cobra"
 )
