@@ -1,4 +1,4 @@
-module github.com/rifelpet/aws-policy-builder
+module github.com/rifelpet/iam-policy-builder
 
 require (
 	github.com/mitchellh/go-homedir v1.0.0 // indirect
