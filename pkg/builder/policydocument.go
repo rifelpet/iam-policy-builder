@@ -24,6 +24,7 @@ func BuildDocument(usages []*iam.AWSServiceUsage) (*iam.PolicyDocument, error) {
 
 	for svc, actions := range services {
 		statement := &iam.StatementEntry{
+			Sid:      svc,
 			Effect:   "allow",
 			Action:   make([]string, 0),
 			Resource: []string{"*"},

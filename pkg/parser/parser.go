@@ -97,7 +97,7 @@ func Parse(path string) error {
 	if err != nil {
 		return err
 	}
-	b, err := json.Marshal(doc)
+	b, err := json.MarshalIndent(doc, "", "    ")
 	if err != nil {
 		return err
 	}

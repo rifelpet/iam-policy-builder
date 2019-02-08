@@ -16,6 +16,7 @@ type PolicyDocument struct {
 
 // StatementEntry represents an individual Statement in a policy document
 type StatementEntry struct {
+	Sid      string
 	Effect   string
 	Action   []string
 	Resource []string
