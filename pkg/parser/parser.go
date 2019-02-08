@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"encoding/json"
 	"fmt"
 	"go/ast"
 	goparser "go/parser"
@@ -10,6 +11,9 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/rifelpet/iam-policy-builder/pkg/builder"
+	"github.com/rifelpet/iam-policy-builder/pkg/iam"
 )
 
 var awsImportPrefix = regexp.MustCompile("\"github.com/aws/aws-sdk-go/service/(\\w+)\"")
@@ -26,19 +30,13 @@ func Parse(path string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Println(awsFiles)
+	awsServices := make([]*iam.AWSServiceUsage, 0)
 	for _, f := range awsFiles {
-		awsImports := getAWSServices(f)
-		fmt.Println(awsImports)
-		ast.Print(fileset, f)
+		fileServices := getAWSServices(f)
 
+		// First parse to find the names of the client variables
 		ast.Inspect(f, func(n ast.Node) bool {
-			var s string
 			switch x := n.(type) {
-			case *ast.BasicLit:
-				s = x.Value
-			case *ast.Ident:
-				s = x.Name
 			case *ast.AssignStmt:
 				rhs := x.Rhs
 				for _, expr := range rhs {
@@ -51,37 +49,63 @@ func Parse(path string) error {
 							switch q := pkg.(type) {
 							case *ast.Ident:
 								pkgFn := q.Name
-								if pkgFn.Name == "New" {
-									for _, imp := range awsImports {
-										if imp.ImportName == pkg {
-											fmt.Println(pkg)
+								for _, awsService := range fileServices {
+									if awsService.ImportName == pkgFn && z.Sel.Name == "New" {
+										switch w := x.Lhs[0].(type) {
+										case *ast.Ident:
+											awsService.ClientNames = append(awsService.ClientNames, w.Name)
 										}
 									}
 								}
 							}
 						}
-
 					}
 				}
-
-			}
-			if s != "" {
-				//fmt.Printf("%s:\t%s\n", fileset.Position(n.Pos()), s)
 			}
 			return true
 		})
-		for _, f := range f.Decls {
-			fn, ok := f.(*ast.FuncDecl)
-			if !ok {
-				continue
-			}
-			fmt.Println(fn.Name.Name)
-		}
 
+		// Next, parse to find function calls from the client variables
+		ast.Inspect(f, func(n ast.Node) bool {
+			switch x := n.(type) {
+			case *ast.AssignStmt:
+				callExpr := x.Rhs[0]
+				switch y := callExpr.(type) {
+				case *ast.CallExpr:
+					fn := y.Fun
+					switch z := fn.(type) {
+					case *ast.SelectorExpr:
+						switch w := z.X.(type) {
+						case *ast.Ident:
+							for _, service := range fileServices {
+								for _, clientName := range service.ClientNames {
+									if clientName == w.Name {
+										functionCall := z.Sel.Name
+										service.FunctionCalls = append(service.FunctionCalls, functionCall)
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+			return true
+		})
+		awsServices = append(awsServices, fileServices...)
 	}
+	doc, err := builder.BuildDocument(awsServices)
+	if err != nil {
+		return err
+	}
+	b, err := json.Marshal(doc)
+	if err != nil {
+		return err
+	}
+	fmt.Println(string(b))
 	return nil
 }
 
+// parseAWSFiles returns a list of files in the project that contain AWS service imports
 func parseAWSFiles(fileset *token.FileSet, fileCount int) ([]*ast.File, error) {
 	awsFiles := make([]*ast.File, 0)
 	parseCount := 0
@@ -94,7 +118,6 @@ func parseAWSFiles(fileset *token.FileSet, fileCount int) ([]*ast.File, error) {
 			for _, imp := range parsed.Imports {
 				if awsImportPrefix.MatchString(imp.Path.Value) {
 					awsFiles = append(awsFiles, parsed)
-					fmt.Println(parsed.Name.Name)
 				}
 			}
 			parseCount++
@@ -104,6 +127,8 @@ func parseAWSFiles(fileset *token.FileSet, fileCount int) ([]*ast.File, error) {
 	return awsFiles, nil
 }
 
+// buildFileSet creates a set of files from a project path
+// returning a *token.FileSet and the number of files
 func buildFileSet(path string) (*token.FileSet, int, error) {
 	goFiles := token.NewFileSet()
 	fileCount := 0
@@ -140,13 +165,9 @@ func ignore(filename string) bool {
 	return false
 }
 
-type AWSServiceImport struct {
-	ImportName string
-	Service    string
-}
-
-func getAWSServices(file *ast.File) []AWSServiceImport {
-	services := make([]AWSServiceImport, 0)
+// getAWSServices creates a list of AWSServiceImports in a given file
+func getAWSServices(file *ast.File) []*iam.AWSServiceUsage {
+	services := make([]*iam.AWSServiceUsage, 0)
 	for _, imp := range file.Imports {
 		importMatch := awsImportPrefix.FindStringSubmatch(imp.Path.Value)
 		if len(importMatch) > 1 {
@@ -155,11 +176,13 @@ func getAWSServices(file *ast.File) []AWSServiceImport {
 			if imp.Name != nil {
 				importName = imp.Name.Name
 			}
-			serviceImport := AWSServiceImport{
-				ImportName: importName,
-				Service:    service,
+			serviceImport := iam.AWSServiceUsage{
+				ImportName:    importName,
+				Service:       service,
+				ClientNames:   make([]string, 0),
+				FunctionCalls: make([]string, 0),
 			}
-			services = append(services, serviceImport)
+			services = append(services, &serviceImport)
 		}
 	}
 	return services
