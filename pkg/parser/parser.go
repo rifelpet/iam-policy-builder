@@ -11,6 +11,9 @@ import (
 	"regexp"
 	"strings"
 )
+// TODO:
+// Use https://gist.github.com/0xdabbad00/581714de8f0957fce30efcb1634785a9
+// for building condition keys
 
 var awsImportPrefix = regexp.MustCompile("\"github.com/aws/aws-sdk-go/service/(\\w+)\"")
 
